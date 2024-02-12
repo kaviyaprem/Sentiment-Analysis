@@ -1,0 +1,72 @@
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
+from keras.preprocessing.text import Tokenizer
+from keras.preprocessing.sequence import pad_sequences
+from keras.models import Sequential
+from keras.layers import Embedding, LSTM, Dense, Dropout
+from keras.utils import to_categorical
+
+# Load train and test datasets
+train_df = pd.read_csv('train (1).csv')
+test_df = pd.read_csv('test (1).csv', header=None)
+
+# Drop rows with NaN values
+train_df.dropna(inplace=True)
+
+# Preprocessing function
+def preprocess_text(text):
+    # Convert text to lowercase
+    text = text.lower()
+    # Other preprocessing steps such as removing special characters, URLs, mentions, etc. can be added here
+    return text
+
+# Apply preprocessing to train and test datasets
+train_df['Tweets'] = train_df['Tweets'].apply(preprocess_text)
+test_df.rename(columns={0: 'Text', 1: 'Label'}, inplace=True)  # Assuming labels are in the second column
+test_df['Text'] = test_df['Text'].apply(preprocess_text)
+
+# Encode labels
+label_encoder = LabelEncoder()
+train_df['label'] = label_encoder.fit_transform(train_df['label'])
+test_df['Label'] = label_encoder.transform(test_df['Label'])
+test_df.rename(columns={0: 'Text', 1: 'Label'}, inplace=True)
+# Tokenization
+tokenizer = Tokenizer()
+tokenizer.fit_on_texts(train_df['Tweets'])
+X_train = tokenizer.texts_to_sequences(train_df['Tweets'])
+X_test = tokenizer.texts_to_sequences(test_df['Text'])
+
+vocab_size = len(tokenizer.word_index) + 1
+
+# Padding sequences
+maxlen = 100  # Adjust according to the maximum length of your sequences
+X_train = pad_sequences(X_train, padding='post', maxlen=maxlen)
+X_test = pad_sequences(X_test, padding='post', maxlen=maxlen)
+
+# Convert labels to categorical
+y_train = to_categorical(train_df['label'])
+
+# Split train dataset into train and validation sets
+X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.2, random_state=42)
+
+# Define LSTM model
+embedding_dim = 100
+model = Sequential()
+model.add(Embedding(input_dim=vocab_size, output_dim=embedding_dim, input_length=maxlen))
+model.add(LSTM(units=64, dropout=0.2, recurrent_dropout=0.2))
+model.add(Dense(3, activation='softmax'))
+
+# Compile the model
+model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+
+# Train the model
+model.fit(X_train, y_train, batch_size=32, epochs=10, validation_data=(X_val, y_val))
+
+# Evaluate the model on test data
+score = model.evaluate(X_test, to_categorical(test_df['Label']), verbose=0)
+print("Test Accuracy:", score[1])
+
+# Save the model
+model.save('sentiment_analysis_model.h5')
